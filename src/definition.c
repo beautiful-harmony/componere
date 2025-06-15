@@ -128,39 +128,50 @@ static inline void php_componere_definition_magic(zend_class_entry *ce, zend_cla
 {
 #define php_componere_definition_magic_find(c, f) \
 	zend_hash_str_find_ptr(&c->function_table, ZEND_STRL(f))
-	if (parent->constructor)
-		ce->constructor = php_componere_definition_magic_find(ce, "__construct");
-	if (parent->destructor)
-		ce->destructor = php_componere_definition_magic_find(ce, "__destruct");
-	if (parent->clone)
-		ce->clone = php_componere_definition_magic_find(ce, "__clone");
-	if (parent->__get)
-		ce->__get = php_componere_definition_magic_find(ce, "__get");
-	if (parent->__set)
-		ce->__set = php_componere_definition_magic_find(ce, "__set");
-	if (parent->__unset)
-		ce->__unset = php_componere_definition_magic_find(ce, "__unset");
-	if (parent->__call)
-		ce->__call = php_componere_definition_magic_find(ce, "__call");
-	if (parent->__callstatic)
-		ce->__callstatic = php_componere_definition_magic_find(ce, "__callstatic");
-	if (parent->__tostring)
-		ce->__tostring = php_componere_definition_magic_find(ce, "__tostring");
-	if (parent->__debugInfo)
-		ce->__debugInfo = php_componere_definition_magic_find(ce, "__debuginfo");
+#define php_componere_definition_magic_set(dst, src, fn) \
+	do { \
+		if (src) { \
+			zend_function *__f = php_componere_definition_magic_find(ce, fn); \
+			if (__f) dst = __f; \
+		} \
+	} while(0)
+
+	php_componere_definition_magic_set(ce->constructor, parent->constructor, "__construct");
+	php_componere_definition_magic_set(ce->destructor, parent->destructor, "__destruct");
+	php_componere_definition_magic_set(ce->clone, parent->clone, "__clone");
+	php_componere_definition_magic_set(ce->__get, parent->__get, "__get");
+	php_componere_definition_magic_set(ce->__set, parent->__set, "__set");
+	php_componere_definition_magic_set(ce->__unset, parent->__unset, "__unset");
+	php_componere_definition_magic_set(ce->__call, parent->__call, "__call");
+	php_componere_definition_magic_set(ce->__callstatic, parent->__callstatic, "__callstatic");
+	php_componere_definition_magic_set(ce->__tostring, parent->__tostring, "__tostring");
+	php_componere_definition_magic_set(ce->__debugInfo, parent->__debugInfo, "__debuginfo");
 
 #if PHP_VERSION_ID >= 80000
-	ce->__serialize = php_componere_definition_magic_find(ce, "serialize");
-	ce->__unserialize = php_componere_definition_magic_find(ce, "unserialize");
+	if (parent->__serialize) {
+		zend_function *__f = php_componere_definition_magic_find(ce, "__serialize");
+		if (__f) ce->__serialize = __f;
+	}
+	if (parent->__unserialize) {
+		zend_function *__f = php_componere_definition_magic_find(ce, "__unserialize");
+		if (__f) ce->__unserialize = __f;
+	}
 #else
-	ce->serialize_func = php_componere_definition_magic_find(ce, "serialize");
-	ce->unserialize_func = php_componere_definition_magic_find(ce, "unserialize");
+	if (parent->serialize_func) {
+		zend_function *__f = php_componere_definition_magic_find(ce, "serialize");
+		if (__f) ce->serialize_func = __f;
+	}
+	if (parent->unserialize_func) {
+		zend_function *__f = php_componere_definition_magic_find(ce, "unserialize");
+		if (__f) ce->unserialize_func = __f;
+	}
 #endif
 
 	ce->serialize = parent->serialize;
 	ce->unserialize = parent->unserialize;
 
 #undef php_componere_definition_magic_find
+#undef php_componere_definition_magic_set
 }
 
 inline void php_componere_definition_parent(zend_class_entry *ce, zend_class_entry *parent) {
@@ -234,6 +245,12 @@ inline void php_componere_definition_copy(zend_class_entry *ce, zend_class_entry
         } else {
             ZEND_MAP_PTR_INIT(ce->static_members_table, ce->default_static_members_table);
         }
+#elif PHP_VERSION_ID >= 80000
+        if (ce->ce_flags & ZEND_ACC_IMMUTABLE) {
+            ZEND_MAP_PTR_NEW(ce->static_members_table);
+        } else {
+            ZEND_MAP_PTR_INIT(ce->static_members_table, &ce->default_static_members_table);
+        }
 #elif PHP_VERSION_ID >= 70400
         if (ce->ce_flags & ZEND_ACC_IMMUTABLE) {
             ZEND_MAP_PTR_NEW(ce->static_members_table);
@@ -248,6 +265,10 @@ inline void php_componere_definition_copy(zend_class_entry *ce, zend_class_entry
 #if PHP_VERSION_ID >= 80100
     else {
         ZEND_MAP_PTR_INIT(ce->static_members_table, ce->default_static_members_table);
+    }
+#elif PHP_VERSION_ID >= 80000
+    else {
+        ZEND_MAP_PTR_INIT(ce->static_members_table, &ce->default_static_members_table);
     }
 #elif PHP_VERSION_ID >= 70400
     else {
@@ -1108,10 +1129,19 @@ PHP_METHOD(Componere_Definition, getClosure)
 	function = zend_hash_find_ptr(&o->ce->function_table, key);
 
 	if (!function) {
+		zend_string_release(key);
 		php_componere_throw("could not find %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
-	} else {
-		zend_create_closure(return_value, function, o->ce, o->ce, NULL);
+		return;
 	}
+	
+	if (function->type == ZEND_INTERNAL_FUNCTION || 
+		(function->type == ZEND_USER_FUNCTION && function->op_array.fn_flags & ZEND_ACC_CLOSURE)) {
+		zend_string_release(key);
+		php_componere_throw("cannot create closure for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	zend_create_closure(return_value, function, o->ce, o->ce, NULL);
 	zend_string_release(key);
 }
 
