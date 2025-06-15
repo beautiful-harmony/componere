@@ -228,7 +228,13 @@ inline void php_componere_definition_copy(zend_class_entry *ce, zend_class_entry
 			ZVAL_DUP(&ce->default_static_members_table[i], &parent->default_static_members_table[i]);
 		}
 
-#if PHP_VERSION_ID >= 70400
+#if PHP_VERSION_ID >= 80100
+        if (ce->ce_flags & ZEND_ACC_IMMUTABLE) {
+            ZEND_MAP_PTR_NEW(ce->static_members_table);
+        } else {
+            ZEND_MAP_PTR_INIT(ce->static_members_table, ce->default_static_members_table);
+        }
+#elif PHP_VERSION_ID >= 70400
         if (ce->ce_flags & ZEND_ACC_IMMUTABLE) {
             ZEND_MAP_PTR_NEW(ce->static_members_table);
         } else {
@@ -239,7 +245,11 @@ inline void php_componere_definition_copy(zend_class_entry *ce, zend_class_entry
 #endif
 		ce->default_static_members_count = parent->default_static_members_count;
 	}
-#if PHP_VERSION_ID >= 70400
+#if PHP_VERSION_ID >= 80100
+    else {
+        ZEND_MAP_PTR_INIT(ce->static_members_table, ce->default_static_members_table);
+    }
+#elif PHP_VERSION_ID >= 70400
     else {
         ZEND_MAP_PTR_INIT(ce->static_members_table, &ce->default_static_members_table);
     }
@@ -849,7 +859,7 @@ PHP_METHOD(Componere_Abstract_Definition, addTrait)
         o->ce->ce_flags |= ZEND_ACC_IMPLEMENT_TRAITS;
 #endif
 
-        zend_do_link_class(o->ce, NULL);
+        zend_do_link_class(o->ce, NULL, NULL);
 
         o->ce->num_traits  = num_traits + 1;
         o->ce->trait_names -= num_traits;
@@ -967,7 +977,7 @@ PHP_METHOD(Componere_Definition, addProperty)
 			o->ce->parent_name = NULL;
 			o->ce->properties_info_table = NULL;
 
-        		zend_do_link_class(o->ce, NULL);
+        		zend_do_link_class(o->ce, NULL, NULL);
 
 			o->ce->parent_name = parent_name;
 		}
