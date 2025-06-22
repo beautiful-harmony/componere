@@ -228,20 +228,27 @@ PHP_METHOD(Componere_Patch, getClosure)
 	}
 	
 	/* Additional safety checks */
-	if (function->type == ZEND_INTERNAL_FUNCTION || 
-		(function->type == ZEND_USER_FUNCTION && function->op_array.fn_flags & ZEND_ACC_CLOSURE)) {
+	if (function->type == ZEND_INTERNAL_FUNCTION) {
 		zend_string_release(key);
-		php_componere_throw("cannot create closure for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		php_componere_throw("cannot create closure for internal function %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
 		return;
 	}
 	
-	if (!o->ce || !function) {
+	if (function->type != ZEND_USER_FUNCTION) {
+		zend_string_release(key);
+		php_componere_throw("invalid function type for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	/* Ensure valid instance and class entry */
+	if (Z_TYPE(o->instance) != IS_OBJECT || !o->ce) {
 		zend_string_release(key);
 		php_componere_throw("invalid function scope for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
 		return;
 	}
 	
-	zend_create_closure(return_value, function, o->ce, o->ce, &o->instance);
+	/* Create closure with proper instance binding */
+	zend_create_closure(return_value, function, o->saved, o->saved, &o->instance);
 	zend_string_release(key);
 }
 
