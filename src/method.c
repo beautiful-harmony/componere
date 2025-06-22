@@ -127,6 +127,10 @@ PHP_METHOD(Componere_Method, __construct)
 	if (o->function->op_array.fn_flags & ZEND_ACC_VARIADIC) {
 		flags |= ZEND_ACC_VARIADIC;
 	}
+	/* Preserve return type information */
+	if (o->function->op_array.fn_flags & ZEND_ACC_RETURN_REFERENCE) {
+		flags |= ZEND_ACC_RETURN_REFERENCE;
+	}
 
 	o->function->op_array.fn_flags = flags;
 	

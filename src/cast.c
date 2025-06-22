@@ -102,7 +102,7 @@ zval* php_componere_cast(zval *return_value, zval *instance, zend_class_entry *t
 			}
 
 			/* Skip properties that were already copied in the slot-based loop */
-			if (info->offset < zo->ce->default_properties_count) {
+			if (info->offset < co->ce->default_properties_count) {
 				continue;
 			}
 

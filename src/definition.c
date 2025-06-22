@@ -731,26 +731,30 @@ PHP_METHOD(Componere_Definition, register)
 
 	zend_hash_update_ptr(CG(class_table), name, o->ce);
 
-	/* Initialize static members table if needed - temporarily disabled for testing */
-	/*
-	if (o->ce->default_static_members_count > 0) {
+	/* Initialize static members table safely */
+	if (o->ce->default_static_members_count > 0 && o->ce->default_static_members_table) {
 #if PHP_VERSION_ID >= 70400
 		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
 			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
-			zval *table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
+			/* Only allocate if we have actual static members */
+			zval *table = ecalloc(o->ce->default_static_members_count, sizeof(zval));
 			int i;
 			for (i = 0; i < o->ce->default_static_members_count; i++) {
-				ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
+				if (!Z_ISUNDEF(o->ce->default_static_members_table[i])) {
+					ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
+				} else {
+					ZVAL_UNDEF(&table[i]);
+				}
 			}
 			ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
 		}
 #else
+		/* For PHP < 7.4, direct assignment is safer */
 		if (!o->ce->static_members_table) {
 			o->ce->static_members_table = o->ce->default_static_members_table;
 		}
 #endif
 	}
-	*/
 
 	o->ce->refcount = 1;
 	o->registered = 1;
@@ -794,10 +798,20 @@ PHP_METHOD(Componere_Abstract_Definition, addMethod)
 
 	if (zend_string_equals_literal_ci(name, "__construct")) {
 		o->ce->constructor = function;
+		if (function && function->type == ZEND_USER_FUNCTION) {
+			function->common.scope = o->ce;
+		}
 	} else if (zend_string_equals_literal_ci(name, "__destruct")) {
 		o->ce->destructor = function;
+		/* Ensure the destructor is properly set up for the class */
+		if (function && function->type == ZEND_USER_FUNCTION) {
+			function->common.scope = o->ce;
+		}
 	} else if (zend_string_equals_literal_ci(name, "__clone")) {
 		o->ce->clone = function;
+		if (function && function->type == ZEND_USER_FUNCTION) {
+			function->common.scope = o->ce;
+		}
 	} else if (zend_string_equals_literal_ci(name, "__get")) {
 		o->ce->__get = function;
 		o->ce->ce_flags |= ZEND_ACC_USE_GUARDS;
