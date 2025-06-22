@@ -731,15 +731,18 @@ PHP_METHOD(Componere_Definition, register)
 #if PHP_VERSION_ID >= 70400
 		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
 			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
-		}
-		/* Allocate static members table for runtime use */
-		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
+			/* Allocate static members table for runtime use */
 			zval *table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
 			int i;
 			for (i = 0; i < o->ce->default_static_members_count; i++) {
 				ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
 			}
 			ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
+		}
+#else
+		/* For PHP < 7.4, direct assignment */
+		if (!o->ce->static_members_table) {
+			o->ce->static_members_table = o->ce->default_static_members_table;
 		}
 #endif
 	}
@@ -881,7 +884,7 @@ PHP_METHOD(Componere_Abstract_Definition, addTrait)
         o->ce->ce_flags |= ZEND_ACC_IMPLEMENT_TRAITS;
 #endif
 
-        zend_do_link_class(o->ce, NULL, NULL);
+        zend_do_link_class(o->ce, NULL);
 
         o->ce->num_traits  = num_traits + 1;
         o->ce->trait_names -= num_traits;
