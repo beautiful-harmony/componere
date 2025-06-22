@@ -724,6 +724,15 @@ PHP_METHOD(Componere_Definition, register)
 		php_componere_relink_objects(&EG(objects_store), o->ce, o->saved);
 	}
 
+	/* Ensure proper class linking for different PHP versions */
+#if PHP_VERSION_ID >= 80000
+	/* PHP 8.0+ requires 3 arguments: ce, parent_name, key */
+	zend_do_link_class(o->ce, NULL, name);
+#else
+	/* PHP 7.4 requires 2 arguments: ce, parent_name */
+	zend_do_link_class(o->ce, NULL);
+#endif
+
 	zend_hash_update_ptr(CG(class_table), name, o->ce);
 
 	/* Static member initialization - temporarily disabled pending fix */
