@@ -247,8 +247,15 @@ PHP_METHOD(Componere_Patch, getClosure)
 		return;
 	}
 	
-	/* Create closure with proper instance binding */
-	zend_create_closure(return_value, function, o->saved, o->saved, &o->instance);
+	/* Create closure with proper instance binding - ensure proper scope setup */
+	if (Z_TYPE(o->instance) != IS_OBJECT) {
+		zend_string_release(key);
+		php_componere_throw("invalid instance for closure creation");
+		return;
+	}
+	
+	/* Use original class entry for closure creation to maintain proper context */
+	zend_create_closure(return_value, function, function->common.scope ? function->common.scope : o->saved, o->saved, &o->instance);
 	zend_string_release(key);
 }
 

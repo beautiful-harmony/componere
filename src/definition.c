@@ -731,39 +731,51 @@ PHP_METHOD(Componere_Definition, register)
 
 	zend_hash_update_ptr(CG(class_table), name, o->ce);
 
-	/* Initialize static members table safely */
+	/* Initialize static members table safely - critical for static property access */
 	if (o->ce->default_static_members_count > 0) {
 #if PHP_VERSION_ID >= 70400
+		/* Ensure MAP_PTR is initialized */
 		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
 			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
 		}
 		
-		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
-			/* Allocate and initialize static members table */
-			zval *table = ecalloc(o->ce->default_static_members_count, sizeof(zval));
-			int i;
-			for (i = 0; i < o->ce->default_static_members_count; i++) {
-				if (o->ce->default_static_members_table && !Z_ISUNDEF(o->ce->default_static_members_table[i])) {
-					ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
-				} else {
-					ZVAL_UNDEF(&table[i]);
-				}
+		/* Always allocate and initialize static members table */
+		zval *table = ecalloc(o->ce->default_static_members_count, sizeof(zval));
+		int i;
+		for (i = 0; i < o->ce->default_static_members_count; i++) {
+			if (o->ce->default_static_members_table && !Z_ISUNDEF(o->ce->default_static_members_table[i])) {
+				ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
+			} else {
+				ZVAL_UNDEF(&table[i]);
 			}
-			ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
 		}
+		ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
 #else
-		/* For PHP < 7.4, ensure static table is properly initialized */
-		if (!o->ce->static_members_table && o->ce->default_static_members_table) {
+		/* For PHP < 7.4, directly assign static table */
+		if (!o->ce->static_members_table) {
 			/* Allocate and copy static members table */
 			o->ce->static_members_table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
 			int i;
 			for (i = 0; i < o->ce->default_static_members_count; i++) {
-				if (!Z_ISUNDEF(o->ce->default_static_members_table[i])) {
+				if (o->ce->default_static_members_table && !Z_ISUNDEF(o->ce->default_static_members_table[i])) {
 					ZVAL_COPY(&o->ce->static_members_table[i], &o->ce->default_static_members_table[i]);
 				} else {
 					ZVAL_UNDEF(&o->ce->static_members_table[i]);
 				}
 			}
+		}
+#endif
+	} else if (o->ce->default_static_members_table) {
+		/* If there are static members but count is 0, fix the count */
+		/* This can happen during dynamic class construction */
+#if PHP_VERSION_ID >= 70400
+		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
+			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
+			ZEND_MAP_PTR_SET(o->ce->static_members_table, o->ce->default_static_members_table);
+		}
+#else
+		if (!o->ce->static_members_table) {
+			o->ce->static_members_table = o->ce->default_static_members_table;
 		}
 #endif
 	}
@@ -1040,17 +1052,11 @@ PHP_METHOD(Componere_Definition, addProperty)
 			o->ce->properties_info_table = NULL;
 
         		
-        		/* If this is a static property, ensure static members table is set up */
+        		/* If this is a static property, ensure static members table will be properly initialized */
         		if (php_componere_value_access(value) & ZEND_ACC_STATIC) {
-        			if (o->ce->default_static_members_count > 0 && !ZEND_MAP_PTR(o->ce->static_members_table)) {
+        			/* Static property handling will be completed during register() */
+        			if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
         				ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
-        				/* Allocate static members table */
-        				zval *table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
-        				int i;
-        				for (i = 0; i < o->ce->default_static_members_count; i++) {
-        					ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
-        				}
-        				ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
         			}
         		}
 

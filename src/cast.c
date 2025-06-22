@@ -68,7 +68,7 @@ zval* php_componere_cast(zval *return_value, zval *instance, zend_class_entry *t
 
 	co = zend_objects_new(target);
 
-	/* Initialize target object properties with defaults */
+	/* Initialize all target properties first with defaults */
 	if (co->ce->default_properties_count) {
 		int slot = 0, end = co->ce->default_properties_count;
 
@@ -77,30 +77,22 @@ zval* php_componere_cast(zval *return_value, zval *instance, zend_class_entry *t
 				  &co->ce->default_properties_table[slot]);
 			slot++;
 		} while (slot < end);
-	}
-	
-	/* Copy compatible properties from source by name */
-	if (zo->ce->default_properties_count && instanceof_function(target, source)) {
-		zend_property_info *prop_info;
 		
-		ZEND_HASH_FOREACH_PTR(&zo->ce->properties_info, prop_info) {
-			if (prop_info->flags & ZEND_ACC_STATIC) {
-				continue;
-			}
+		/* Then overwrite with source values for inherited properties only */
+		if (instanceof_function(target, source) && zo->ce->default_properties_count) {
+			int source_count = MIN(zo->ce->default_properties_count, co->ce->default_properties_count);
+			slot = 0;
 			
-			zend_property_info *target_prop = zend_hash_find_ptr(&co->ce->properties_info, prop_info->name);
-			if (target_prop && !(target_prop->flags & ZEND_ACC_STATIC)) {
-				zval *source_val = OBJ_PROP(zo, prop_info->offset);
-				zval *target_val = OBJ_PROP(co, target_prop->offset);
-				
-				if (references && !Z_ISREF_P(source_val)) {
-					ZVAL_MAKE_REF(source_val);
+			while (slot < source_count) {
+				if (references && !Z_ISREF(zo->properties_table[slot])) {
+					ZVAL_MAKE_REF(&zo->properties_table[slot]);
 				}
 				
-				zval_ptr_dtor(target_val);
-				ZVAL_COPY(target_val, source_val);
+				zval_ptr_dtor(&co->properties_table[slot]);
+				ZVAL_COPY(&co->properties_table[slot], &zo->properties_table[slot]);
+				slot++;
 			}
-		} ZEND_HASH_FOREACH_END();
+		}
 	}
 
 	if (zo->properties && instanceof_function(target, source)) {
