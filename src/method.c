@@ -120,12 +120,24 @@ PHP_METHOD(Componere_Method, __construct)
 	o->function->op_array.scope = NULL;
 	o->function->op_array.prototype = NULL;
 
+	/* Preserve access level and important flags from original function */
 	flags = 
 		(o->function->op_array.fn_flags & ZEND_ACC_STATIC) ?
 			(ZEND_ACC_STATIC|ZEND_ACC_PUBLIC) :
 			(ZEND_ACC_PUBLIC);
+			
+	/* Preserve all signature-related flags */
 	if (o->function->op_array.fn_flags & ZEND_ACC_VARIADIC) {
 		flags |= ZEND_ACC_VARIADIC;
+	}
+	if (o->function->op_array.fn_flags & ZEND_ACC_RETURN_REFERENCE) {
+		flags |= ZEND_ACC_RETURN_REFERENCE;
+	}
+	if (o->function->op_array.fn_flags & ZEND_ACC_HAS_RETURN_TYPE) {
+		flags |= ZEND_ACC_HAS_RETURN_TYPE;
+	}
+	if (o->function->op_array.fn_flags & ZEND_ACC_HAS_TYPE_HINTS) {
+		flags |= ZEND_ACC_HAS_TYPE_HINTS;
 	}
 
 	o->function->op_array.fn_flags = flags;

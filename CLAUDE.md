@@ -37,7 +37,7 @@ make clean
 ```
 
 ### Version Compatibility
-- Requires PHP 7.1+
+- Requires PHP 7.4+
 - Code uses conditional compilation for PHP 8.0+ compatibility
 - Version-specific arginfo headers are generated from .stub.php files
 
@@ -54,10 +54,85 @@ Uses PHP's standard test framework:
 - Tests are in `tests/` directory as `.phpt` files
 - Test execution via `make test` or `php run-tests.php`
 - Failed tests generate `.diff`, `.exp`, `.log`, and `.out` files
+- Empty `.diff` files indicate test passes
 
-## Key Implementation Notes
+## Critical Implementation Details
 
-- Heavy use of PHP version compatibility macros in `common.h`
-- Object handlers are customized to deny property access on core objects
-- Extension integrates with PHP's optimizer (OPcache) by adjusting optimization levels
-- Uses libtool for shared library building
+### Memory Management & Reference Counting
+Based on PHP Internals best practices:
+- Always use proper `ZVAL_COPY()` for zval copying with reference counting
+- Use `zval_ptr_dtor()` for proper cleanup to avoid memory leaks
+- Follow PHP's copy-on-write semantics for shared structures
+- Use `Z_TRY_ADDREF()` for safe reference counting on potentially immutable values
+
+### Static Property Management
+Critical for proper static property functionality:
+- Static members table must be properly initialized during class registration
+- Use `ZEND_MAP_PTR` macros for thread-safe static member access (PHP 7.4+)
+- Always allocate and copy from `default_static_members_table` during registration
+- Handle edge cases where `default_static_members_count` might be inconsistent
+
+### Object Casting & Property Handling
+Inheritance-aware property copying:
+- Initialize target object with default values first
+- Copy source properties only for inherited/compatible properties
+- Use name-based property matching for inheritance relationships
+- Avoid duplicate property copying through multiple code paths
+
+### Method Replacement & Scope Management
+For proper method functionality:
+- Preserve all signature-related flags (`ZEND_ACC_HAS_RETURN_TYPE`, etc.)
+- Set proper scope (`function->common.scope`) during method addition
+- For closures: Use original class entry for proper context binding
+- Validate function types and reject internal functions for closure creation
+
+### Reflection Integration
+Proper reflection object creation:
+- Initialize all required fields including `class` property for ReflectionMethod
+- Use `zend_string_copy()` for class name assignment
+- Handle both function and method reflection consistently
+
+## Known Issues & Solutions
+
+### Segmentation Faults
+Common causes and fixes:
+1. **getClosure**: Ensure proper instance binding and scope validation
+2. **Static properties**: Missing static members table initialization  
+3. **Property access**: NULL pointer dereference in property copying
+4. **Memory cleanup**: Improper zval destruction order
+
+### Type System Integration
+- Return type validation requires preserved function flags
+- Method scope must be properly linked to class entry
+- Closure binding needs original class context for type checking
+
+### PHP Version Compatibility
+- Use conditional compilation for PHP 8.0+ specific APIs
+- Handle `zend_do_link_class` signature differences between PHP 7.4 and 8.0+
+- ZEND_MAP_PTR macros are standard in supported versions (7.4+)
+- Focus on PHP 7.4-8.3 compatibility range
+
+## Debug & Development Tips
+
+### Test Analysis
+- Empty `.diff` files = test passes
+- Segfaults usually indicate memory management issues
+- Type errors suggest scope/binding problems
+- Property issues often relate to inheritance handling
+
+### Common Debugging Commands
+```bash
+# Test specific functionality
+make test TESTS=tests/043.phpt
+
+# Check test status
+find tests/ -name "*.diff" -exec sh -c 'if [ -s "$1" ]; then echo "FAILED: $1"; fi' _ {} \;
+
+# Rebuild and test quickly
+make && make test 2>/dev/null | grep -E "(PASS|FAIL)" | tail -10
+```
+
+### Reference Materials
+- PHP Internals Book: Essential for understanding zval management and object handlers
+- PHP source code: `Zend/zend_*.h` files for structure definitions
+- Extension development: Focus on memory safety and reference counting

@@ -139,9 +139,7 @@ PHP_METHOD(Componere_Patch, __construct)
 	o->ce->ce_flags |= ZEND_ACC_USE_GUARDS;
 	o->saved = pce;
 	o->saved->refcount++;
-#if PHP_VERSION_ID >= 70400
     o->ce->ce_flags |= ZEND_ACC_LINKED;
-#endif
 
 	ZVAL_COPY(&o->instance, pd);
 
@@ -177,9 +175,7 @@ PHP_METHOD(Componere_Patch, __construct)
 		o->ce->ce_flags &= ~ZEND_ACC_IMPLICIT_ABSTRACT_CLASS;
 	}
 
-#if PHP_VERSION_ID >= 70400
     o->ce->ce_flags |= ZEND_ACC_RESOLVED_INTERFACES;
-#endif
 }
 
 PHP_METHOD(Componere_Patch, apply)
@@ -220,12 +216,42 @@ PHP_METHOD(Componere_Patch, getClosure)
 	function = zend_hash_find_ptr(&o->ce->function_table, key);
 
 	if (!function) {
+		zend_string_release(key);
 		php_componere_throw(
 			"could not find %s::%s", 
 			ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
-	} else {
-		zend_create_closure(return_value, function, o->ce, o->ce, &o->instance);
+		return;
 	}
+	
+	/* Additional safety checks */
+	if (function->type == ZEND_INTERNAL_FUNCTION) {
+		zend_string_release(key);
+		php_componere_throw("cannot create closure for internal function %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	if (function->type != ZEND_USER_FUNCTION) {
+		zend_string_release(key);
+		php_componere_throw("invalid function type for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	/* Ensure valid instance and class entry */
+	if (Z_TYPE(o->instance) != IS_OBJECT || !o->ce) {
+		zend_string_release(key);
+		php_componere_throw("invalid function scope for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	/* Create closure with proper instance binding - ensure proper scope setup */
+	if (Z_TYPE(o->instance) != IS_OBJECT) {
+		zend_string_release(key);
+		php_componere_throw("invalid instance for closure creation");
+		return;
+	}
+	
+	/* Use original class entry for closure creation to maintain proper context */
+	zend_create_closure(return_value, function, function->common.scope ? function->common.scope : o->saved, o->saved, &o->instance);
 	zend_string_release(key);
 }
 
@@ -313,22 +339,16 @@ PHP_METHOD(Componere_Patch, derive)
 	php_componere_definition_copy(r->ce, o->ce);
 	php_componere_definition_parent(r->ce, o->ce);
 
-#if PHP_VERSION_ID >= 70400
     r->ce->ce_flags |= ZEND_ACC_LINKED;
-#endif
 
 	r->saved = Z_OBJCE_P(instance);
 	r->saved->refcount++;
 
 	ZVAL_COPY(&r->instance, instance);
 
-#if PHP_VERSION_ID >= 70400
     r->ce->ce_flags |= ZEND_ACC_RESOLVED_INTERFACES;
-#endif
 
-#if PHP_VERSION_ID >= 70400
     php_componere_definition_properties_table_rebuild(r->ce);
-#endif
 }
 
 PHP_MINIT_FUNCTION(Componere_Patch) {

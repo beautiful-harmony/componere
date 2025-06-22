@@ -68,24 +68,31 @@ zval* php_componere_cast(zval *return_value, zval *instance, zend_class_entry *t
 
 	co = zend_objects_new(target);
 
+	/* Initialize all target properties first with defaults */
 	if (co->ce->default_properties_count) {
 		int slot = 0, end = co->ce->default_properties_count;
 
 		do {
-			if (slot < zo->ce->default_properties_count) {
+			ZVAL_COPY(&co->properties_table[slot],
+				  &co->ce->default_properties_table[slot]);
+			slot++;
+		} while (slot < end);
+		
+		/* Then overwrite with source values for inherited properties only */
+		if (instanceof_function(target, source) && zo->ce->default_properties_count) {
+			int source_count = MIN(zo->ce->default_properties_count, co->ce->default_properties_count);
+			slot = 0;
+			
+			while (slot < source_count) {
 				if (references && !Z_ISREF(zo->properties_table[slot])) {
 					ZVAL_MAKE_REF(&zo->properties_table[slot]);
 				}
-
-				ZVAL_COPY(
-					&co->properties_table[slot], 
-					&zo->properties_table[slot]);
-			} else {
-				ZVAL_COPY(&co->properties_table[slot],
-					  &co->ce->default_properties_table[slot]);
+				
+				zval_ptr_dtor(&co->properties_table[slot]);
+				ZVAL_COPY(&co->properties_table[slot], &zo->properties_table[slot]);
+				slot++;
 			}
-			slot++;
-		} while (slot < end);
+		}
 	}
 
 	if (zo->properties && instanceof_function(target, source)) {
@@ -98,6 +105,11 @@ zval* php_componere_cast(zval *return_value, zval *instance, zend_class_entry *t
 					&co->ce->properties_info, key);
 
 			if (!info || info->flags & ZEND_ACC_STATIC) {
+				continue;
+			}
+
+			/* Skip properties that were already copied in the slot-based loop */
+			if (info->offset < co->ce->default_properties_count) {
 				continue;
 			}
 

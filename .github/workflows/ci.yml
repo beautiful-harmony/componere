@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [ develop, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.1', '8.2', '8.3']
+    
+    name: PHP ${{ matrix.php }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php }}
+        extensions: json
+        tools: phpize
+    
+    - name: Show PHP version
+      run: php -v
+    
+    - name: Generate build files
+      run: phpize
+    
+    - name: Configure
+      run: ./configure --enable-componere
+    
+    - name: Build
+      run: make
+    
+    - name: Run tests
+      run: make test
+    
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-php-${{ matrix.php }}
+        path: |
+          tests/*.diff
+          tests/*.exp
+          tests/*.log
+          tests/*.out
