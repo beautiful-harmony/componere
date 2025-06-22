@@ -395,10 +395,7 @@ static zend_always_inline void php_componere_relink_objects(zend_objects_store *
 
 			if (IS_OBJ_VALID(object)) {
 				if (object->ce == parent) {
-					/* Relink objects to the new definition */
-					if (def) {
-						object->ce = def;
-					}
+					object->ce = def;
 				} else if (instanceof_function(object->ce, zend_ce_closure)) {
 					zend_closure_t *closure = (zend_closure_t*) object;
 
@@ -734,12 +731,12 @@ PHP_METHOD(Componere_Definition, register)
 
 	zend_hash_update_ptr(CG(class_table), name, o->ce);
 
-	/* Initialize static members table if needed */
+	/* Initialize static members table if needed - temporarily disabled for testing */
+	/*
 	if (o->ce->default_static_members_count > 0) {
 #if PHP_VERSION_ID >= 70400
 		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
 			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
-			/* Allocate static members table for runtime use */
 			zval *table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
 			int i;
 			for (i = 0; i < o->ce->default_static_members_count; i++) {
@@ -748,29 +745,23 @@ PHP_METHOD(Componere_Definition, register)
 			ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
 		}
 #else
-		/* For PHP < 7.4, direct assignment */
 		if (!o->ce->static_members_table) {
 			o->ce->static_members_table = o->ce->default_static_members_table;
 		}
 #endif
 	}
+	*/
 
 	o->ce->refcount = 1;
 	o->registered = 1;
 
 	zend_string_release(name);
 
+/*
 #if PHP_VERSION_ID >= 70400
     php_componere_definition_properties_table_rebuild(o->ce);
-    /* Ensure class is properly linked */
-#if PHP_VERSION_ID >= 80000
-    zend_do_link_class(o->ce, NULL, NULL);
-#else
-    zend_do_link_class(o->ce, NULL);
 #endif
-#else
-    zend_do_link_class(o->ce, NULL);
-#endif
+*/
 }
 
 PHP_METHOD(Componere_Abstract_Definition, addMethod)
@@ -1022,11 +1013,6 @@ PHP_METHOD(Componere_Definition, addProperty)
 			o->ce->parent_name = NULL;
 			o->ce->properties_info_table = NULL;
 
-        		#if PHP_VERSION_ID >= 80000
-        		zend_do_link_class(o->ce, NULL, NULL);
-        		#else
-        		zend_do_link_class(o->ce, NULL);
-        		#endif
         		
         		/* If this is a static property, ensure static members table is set up */
         		if (php_componere_value_access(value) & ZEND_ACC_STATIC) {
@@ -1183,23 +1169,7 @@ PHP_METHOD(Componere_Definition, getClosure)
 		return;
 	}
 	
-	/* Enhanced safety checks */
-	if (!o->ce || !function->common.scope) {
-		zend_string_release(key);
-		php_componere_throw("invalid class entry or function scope for %s", ZSTR_VAL(name));
-		return;
-	}
-	
-	/* Ensure function scope is compatible */
-	if (function->type == ZEND_USER_FUNCTION) {
-		if (!function->op_array.filename || !function->op_array.opcodes) {
-			zend_string_release(key);
-			php_componere_throw("corrupted function data for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
-			return;
-		}
-	}
-	
-	zend_create_closure(return_value, function, function->common.scope, o->ce, NULL);
+	zend_create_closure(return_value, function, o->ce, o->ce, NULL);
 	zend_string_release(key);
 }
 
