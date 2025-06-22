@@ -55,8 +55,10 @@ void php_componere_reflection_object_factory(
 	php_reflection_object_t *ro;
 #if PHP_VERSION_ID < 70300
 	zend_string *name = zend_string_init(ZEND_STRL("name"), 0);
+	zend_string *class_str = zend_string_init(ZEND_STRL("class"), 0);
 #else
 	zend_string *name = ZSTR_KNOWN(ZEND_STR_NAME);
+	zend_string *class_str = ZSTR_KNOWN(ZEND_STR_CLASS);
 #endif
 	zval key, value;
 
@@ -76,9 +78,35 @@ void php_componere_reflection_object_factory(
             zend_std_write_property(Z_OBJ_P(return_value), name, &value, NULL);
 #endif
 	}
+	
+	/* For ReflectionMethod, also set the class property */
+	if (type == PHP_REF_TYPE_FUNCTION && ptr) {
+		zend_function *func = (zend_function*)ptr;
+		if (func->common.scope && func->common.scope->name) {
+			zval class_value;
+			ZVAL_STR(&class_value, zend_string_copy(func->common.scope->name));
+#if PHP_VERSION_ID < 80000
+			ZVAL_STR(&key, class_str);
+			zend_std_write_property(return_value, &key, &class_value, NULL);
+#else
+			zend_std_write_property(Z_OBJ_P(return_value), class_str, &class_value, NULL);
+#endif
+		} else {
+			/* Set empty string for class if no scope */
+			zval class_value;
+			ZVAL_EMPTY_STRING(&class_value);
+#if PHP_VERSION_ID < 80000
+			ZVAL_STR(&key, class_str);
+			zend_std_write_property(return_value, &key, &class_value, NULL);
+#else
+			zend_std_write_property(Z_OBJ_P(return_value), class_str, &class_value, NULL);
+#endif
+		}
+	}
 
 #if PHP_VERSION_ID < 70300
 	zend_string_release(name);
+	zend_string_release(class_str);
 #endif
 }
 

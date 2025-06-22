@@ -216,27 +216,35 @@ inline void php_componere_definition_copy(zend_class_entry *ce, zend_class_entry
 		ce->num_interfaces = parent->num_interfaces;
 	}
 
-	if (parent->default_properties_count) {
+	if (parent->default_properties_count && parent->default_properties_table) {
 		int i = 0;
 
 		ce->default_properties_table = (zval*)
 			ecalloc(sizeof(zval), parent->default_properties_count);
 
 		for (i = 0; i < parent->default_properties_count; i++) {
-			ZVAL_DUP(&ce->default_properties_table[i], &parent->default_properties_table[i]);
+			if (!Z_ISUNDEF(parent->default_properties_table[i])) {
+				ZVAL_DUP(&ce->default_properties_table[i], &parent->default_properties_table[i]);
+			} else {
+				ZVAL_UNDEF(&ce->default_properties_table[i]);
+			}
 		}
 
 		ce->default_properties_count = parent->default_properties_count;
 	}
 
-	if (parent->default_static_members_count) {
+	if (parent->default_static_members_count && parent->default_static_members_table) {
 		int i = 0;
 
 		ce->default_static_members_table = (zval*)
 			ecalloc(sizeof(zval), parent->default_static_members_count);
 
 		for (i = 0; i < parent->default_static_members_count; i++) {
-			ZVAL_DUP(&ce->default_static_members_table[i], &parent->default_static_members_table[i]);
+			if (!Z_ISUNDEF(parent->default_static_members_table[i])) {
+				ZVAL_DUP(&ce->default_static_members_table[i], &parent->default_static_members_table[i]);
+			} else {
+				ZVAL_UNDEF(&ce->default_static_members_table[i]);
+			}
 		}
 
 #if PHP_VERSION_ID >= 70400
@@ -387,8 +395,8 @@ static zend_always_inline void php_componere_relink_objects(zend_objects_store *
 
 			if (IS_OBJ_VALID(object)) {
 				if (object->ce == parent) {
-					/* Only relink if magic methods are compatible */
-					if (def && (def->destructor == parent->destructor || def->destructor == NULL)) {
+					/* Relink objects to the new definition */
+					if (def) {
 						object->ce = def;
 					}
 				} else if (instanceof_function(object->ce, zend_ce_closure)) {
@@ -754,6 +762,10 @@ PHP_METHOD(Componere_Definition, register)
 
 #if PHP_VERSION_ID >= 70400
     php_componere_definition_properties_table_rebuild(o->ce);
+    /* Ensure class is properly linked */
+    zend_do_link_class(o->ce, NULL, NULL);
+#else
+    zend_do_link_class(o->ce, NULL);
 #endif
 }
 
@@ -1007,6 +1019,20 @@ PHP_METHOD(Componere_Definition, addProperty)
 			o->ce->properties_info_table = NULL;
 
         		zend_do_link_class(o->ce, NULL, NULL);
+        		
+        		/* If this is a static property, ensure static members table is set up */
+        		if (php_componere_value_access(value) & ZEND_ACC_STATIC) {
+        			if (o->ce->default_static_members_count > 0 && !ZEND_MAP_PTR(o->ce->static_members_table)) {
+        				ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
+        				/* Allocate static members table */
+        				zval *table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
+        				int i;
+        				for (i = 0; i < o->ce->default_static_members_count; i++) {
+        					ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
+        				}
+        				ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
+        			}
+        		}
 
 			o->ce->parent_name = parent_name;
 		}
@@ -1149,14 +1175,23 @@ PHP_METHOD(Componere_Definition, getClosure)
 		return;
 	}
 	
-	/* Basic safety checks */
-	if (!o->ce) {
+	/* Enhanced safety checks */
+	if (!o->ce || !function->common.scope) {
 		zend_string_release(key);
-		php_componere_throw("invalid class entry for %s", ZSTR_VAL(name));
+		php_componere_throw("invalid class entry or function scope for %s", ZSTR_VAL(name));
 		return;
 	}
 	
-	zend_create_closure(return_value, function, o->ce, o->ce, NULL);
+	/* Ensure function scope is compatible */
+	if (function->type == ZEND_USER_FUNCTION) {
+		if (!function->op_array.filename || !function->op_array.opcodes) {
+			zend_string_release(key);
+			php_componere_throw("corrupted function data for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+			return;
+		}
+	}
+	
+	zend_create_closure(return_value, function, function->common.scope, o->ce, NULL);
 	zend_string_release(key);
 }
 

@@ -101,6 +101,11 @@ zval* php_componere_cast(zval *return_value, zval *instance, zend_class_entry *t
 				continue;
 			}
 
+			/* Skip properties that were already copied in the slot-based loop */
+			if (info->offset < zo->ce->default_properties_count) {
+				continue;
+			}
+
 			if (Z_TYPE_P(val) == IS_INDIRECT) {
 				val = Z_INDIRECT_P(val);
 			}
