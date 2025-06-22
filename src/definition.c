@@ -884,7 +884,11 @@ PHP_METHOD(Componere_Abstract_Definition, addTrait)
         o->ce->ce_flags |= ZEND_ACC_IMPLEMENT_TRAITS;
 #endif
 
+#if PHP_VERSION_ID >= 80000
+        zend_do_link_class(o->ce, NULL, NULL);
+#else
         zend_do_link_class(o->ce, NULL);
+#endif
 
         o->ce->num_traits  = num_traits + 1;
         o->ce->trait_names -= num_traits;
@@ -1145,10 +1149,10 @@ PHP_METHOD(Componere_Definition, getClosure)
 		return;
 	}
 	
-	/* Additional safety checks */
-	if (!o->ce || !function) {
+	/* Basic safety checks */
+	if (!o->ce) {
 		zend_string_release(key);
-		php_componere_throw("invalid function for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		php_componere_throw("invalid class entry for %s", ZSTR_VAL(name));
 		return;
 	}
 	
