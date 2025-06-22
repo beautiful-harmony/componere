@@ -763,7 +763,11 @@ PHP_METHOD(Componere_Definition, register)
 #if PHP_VERSION_ID >= 70400
     php_componere_definition_properties_table_rebuild(o->ce);
     /* Ensure class is properly linked */
+#if PHP_VERSION_ID >= 80000
     zend_do_link_class(o->ce, NULL, NULL);
+#else
+    zend_do_link_class(o->ce, NULL);
+#endif
 #else
     zend_do_link_class(o->ce, NULL);
 #endif
@@ -1018,7 +1022,11 @@ PHP_METHOD(Componere_Definition, addProperty)
 			o->ce->parent_name = NULL;
 			o->ce->properties_info_table = NULL;
 
+        		#if PHP_VERSION_ID >= 80000
         		zend_do_link_class(o->ce, NULL, NULL);
+        		#else
+        		zend_do_link_class(o->ce, NULL);
+        		#endif
         		
         		/* If this is a static property, ensure static members table is set up */
         		if (php_componere_value_access(value) & ZEND_ACC_STATIC) {
