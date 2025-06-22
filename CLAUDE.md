@@ -37,7 +37,7 @@ make clean
 ```
 
 ### Version Compatibility
-- Requires PHP 7.1+
+- Requires PHP 7.4+
 - Code uses conditional compilation for PHP 8.0+ compatibility
 - Version-specific arginfo headers are generated from .stub.php files
 
@@ -68,8 +68,7 @@ Based on PHP Internals best practices:
 ### Static Property Management
 Critical for proper static property functionality:
 - Static members table must be properly initialized during class registration
-- For PHP 7.4+: Use `ZEND_MAP_PTR` macros for thread-safe static member access
-- For PHP < 7.4: Direct assignment to `static_members_table` 
+- Use `ZEND_MAP_PTR` macros for thread-safe static member access (PHP 7.4+)
 - Always allocate and copy from `default_static_members_table` during registration
 - Handle edge cases where `default_static_members_count` might be inconsistent
 
@@ -108,10 +107,10 @@ Common causes and fixes:
 - Closure binding needs original class context for type checking
 
 ### PHP Version Compatibility
-- Use conditional compilation for version-specific APIs
-- Handle `zend_do_link_class` signature differences
-- MAP_PTR handling varies between PHP versions
-- Static member table structure differences
+- Use conditional compilation for PHP 8.0+ specific APIs
+- Handle `zend_do_link_class` signature differences between PHP 7.4 and 8.0+
+- ZEND_MAP_PTR macros are standard in supported versions (7.4+)
+- Focus on PHP 7.4-8.3 compatibility range
 
 ## Debug & Development Tips
 

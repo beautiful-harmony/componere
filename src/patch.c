@@ -139,9 +139,7 @@ PHP_METHOD(Componere_Patch, __construct)
 	o->ce->ce_flags |= ZEND_ACC_USE_GUARDS;
 	o->saved = pce;
 	o->saved->refcount++;
-#if PHP_VERSION_ID >= 70400
     o->ce->ce_flags |= ZEND_ACC_LINKED;
-#endif
 
 	ZVAL_COPY(&o->instance, pd);
 
@@ -177,9 +175,7 @@ PHP_METHOD(Componere_Patch, __construct)
 		o->ce->ce_flags &= ~ZEND_ACC_IMPLICIT_ABSTRACT_CLASS;
 	}
 
-#if PHP_VERSION_ID >= 70400
     o->ce->ce_flags |= ZEND_ACC_RESOLVED_INTERFACES;
-#endif
 }
 
 PHP_METHOD(Componere_Patch, apply)
@@ -343,22 +339,16 @@ PHP_METHOD(Componere_Patch, derive)
 	php_componere_definition_copy(r->ce, o->ce);
 	php_componere_definition_parent(r->ce, o->ce);
 
-#if PHP_VERSION_ID >= 70400
     r->ce->ce_flags |= ZEND_ACC_LINKED;
-#endif
 
 	r->saved = Z_OBJCE_P(instance);
 	r->saved->refcount++;
 
 	ZVAL_COPY(&r->instance, instance);
 
-#if PHP_VERSION_ID >= 70400
     r->ce->ce_flags |= ZEND_ACC_RESOLVED_INTERFACES;
-#endif
 
-#if PHP_VERSION_ID >= 70400
     php_componere_definition_properties_table_rebuild(r->ce);
-#endif
 }
 
 PHP_MINIT_FUNCTION(Componere_Patch) {

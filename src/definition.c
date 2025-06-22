@@ -596,9 +596,7 @@ PHP_METHOD(Componere_Definition, __construct)
 		}
 	}
 
-#if PHP_VERSION_ID >= 70400
     o->ce->ce_flags |= ZEND_ACC_LINKED;
-#endif
 
 	if (interfaces) {
 		zval *interface = NULL;
@@ -631,12 +629,9 @@ PHP_METHOD(Componere_Definition, __construct)
 	}
 
 
-#if PHP_VERSION_ID >= 70400
     o->ce->ce_flags |= ZEND_ACC_RESOLVED_INTERFACES;
-#endif
 }
 
-#if PHP_VERSION_ID >= 70400
 void php_componere_definition_properties_table_rebuild(zend_class_entry *ce)
 {
 	zend_property_info **table, *prop;
@@ -674,7 +669,6 @@ void php_componere_definition_properties_table_rebuild(zend_class_entry *ce)
 		}
 	} ZEND_HASH_FOREACH_END();
 }
-#endif
 
 PHP_METHOD(Componere_Definition, register)
 {
@@ -729,11 +723,13 @@ PHP_METHOD(Componere_Definition, register)
 		php_componere_relink_objects(&EG(objects_store), o->ce, o->saved);
 	}
 
+	/* Essential class linking - needed before static member initialization */
+	zend_do_link_class(o->ce, NULL, name);
+
 	zend_hash_update_ptr(CG(class_table), name, o->ce);
 
 	/* Initialize static members table safely - critical for static property access */
 	if (o->ce->default_static_members_count > 0) {
-#if PHP_VERSION_ID >= 70400
 		/* Ensure MAP_PTR is initialized */
 		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
 			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
@@ -750,34 +746,20 @@ PHP_METHOD(Componere_Definition, register)
 			}
 		}
 		ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
-#else
-		/* For PHP < 7.4, directly assign static table */
-		if (!o->ce->static_members_table) {
-			/* Allocate and copy static members table */
-			o->ce->static_members_table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
-			int i;
-			for (i = 0; i < o->ce->default_static_members_count; i++) {
-				if (o->ce->default_static_members_table && !Z_ISUNDEF(o->ce->default_static_members_table[i])) {
-					ZVAL_COPY(&o->ce->static_members_table[i], &o->ce->default_static_members_table[i]);
-				} else {
-					ZVAL_UNDEF(&o->ce->static_members_table[i]);
-				}
-			}
-		}
-#endif
 	} else if (o->ce->default_static_members_table) {
 		/* If there are static members but count is 0, fix the count */
 		/* This can happen during dynamic class construction */
-#if PHP_VERSION_ID >= 70400
 		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
 			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
 			ZEND_MAP_PTR_SET(o->ce->static_members_table, o->ce->default_static_members_table);
 		}
-#else
-		if (!o->ce->static_members_table) {
-			o->ce->static_members_table = o->ce->default_static_members_table;
-		}
-#endif
+	}
+	
+	/* Critical: Initialize static members table immediately for classes with static properties */
+	/* This ensures proper memory layout for static property access */
+	if (o->ce->default_static_members_table && !ZEND_MAP_PTR(o->ce->static_members_table)) {
+		ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
+		ZEND_MAP_PTR_SET(o->ce->static_members_table, o->ce->default_static_members_table);
 	}
 
 	o->ce->refcount = 1;
@@ -1044,25 +1026,29 @@ PHP_METHOD(Componere_Definition, addProperty)
 #endif
 		php_componere_value_addref(value);
 
-#if PHP_VERSION_ID >= 70400
+		/* Property management for PHP 7.4+ */
 		{
 			zend_string *parent_name = o->ce->parent_name;
 
 			o->ce->parent_name = NULL;
 			o->ce->properties_info_table = NULL;
 
-        		
         		/* If this is a static property, ensure static members table will be properly initialized */
         		if (php_componere_value_access(value) & ZEND_ACC_STATIC) {
-        			/* Static property handling will be completed during register() */
+        			/* For new classes, we may need to manually update static member counts */
+        			/* zend_declare_property should have handled this, but let's ensure it's correct */
         			if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
         				ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
+        			}
+        			
+        			/* Ensure static members table points to default table for new classes */
+        			if (o->ce->default_static_members_table && !ZEND_MAP_PTR(o->ce->static_members_table)) {
+        				ZEND_MAP_PTR_SET(o->ce->static_members_table, o->ce->default_static_members_table);
         			}
         		}
 
 			o->ce->parent_name = parent_name;
 		}
-#endif
 
 #if PHP_VERSION_ID < 80000
 	}
