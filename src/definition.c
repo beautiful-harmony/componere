@@ -239,40 +239,20 @@ inline void php_componere_definition_copy(zend_class_entry *ce, zend_class_entry
 			ZVAL_DUP(&ce->default_static_members_table[i], &parent->default_static_members_table[i]);
 		}
 
-#if PHP_VERSION_ID >= 80100
+#if PHP_VERSION_ID >= 70400
         if (ce->ce_flags & ZEND_ACC_IMMUTABLE) {
             ZEND_MAP_PTR_NEW(ce->static_members_table);
         } else {
-            ZEND_MAP_PTR_INIT(ce->static_members_table, ce->default_static_members_table);
-        }
-#elif PHP_VERSION_ID >= 80000
-        if (ce->ce_flags & ZEND_ACC_IMMUTABLE) {
-            ZEND_MAP_PTR_NEW(ce->static_members_table);
-        } else {
-            ZEND_MAP_PTR_INIT(ce->static_members_table, &ce->default_static_members_table);
-        }
-#elif PHP_VERSION_ID >= 70400
-        if (ce->ce_flags & ZEND_ACC_IMMUTABLE) {
-            ZEND_MAP_PTR_NEW(ce->static_members_table);
-        } else {
-            ZEND_MAP_PTR_INIT(ce->static_members_table, &ce->default_static_members_table);
+            ZEND_MAP_PTR_INIT(ce->static_members_table, NULL);
         }
 #else
 		ce->static_members_table = ce->default_static_members_table;
 #endif
 		ce->default_static_members_count = parent->default_static_members_count;
 	}
-#if PHP_VERSION_ID >= 80100
+#if PHP_VERSION_ID >= 70400
     else {
-        ZEND_MAP_PTR_INIT(ce->static_members_table, ce->default_static_members_table);
-    }
-#elif PHP_VERSION_ID >= 80000
-    else {
-        ZEND_MAP_PTR_INIT(ce->static_members_table, &ce->default_static_members_table);
-    }
-#elif PHP_VERSION_ID >= 70400
-    else {
-        ZEND_MAP_PTR_INIT(ce->static_members_table, &ce->default_static_members_table);
+        ZEND_MAP_PTR_INIT(ce->static_members_table, NULL);
     }
 #endif
 
@@ -407,7 +387,10 @@ static zend_always_inline void php_componere_relink_objects(zend_objects_store *
 
 			if (IS_OBJ_VALID(object)) {
 				if (object->ce == parent) {
-					object->ce = def;
+					/* Only relink if magic methods are compatible */
+					if (def && (def->destructor == parent->destructor || def->destructor == NULL)) {
+						object->ce = def;
+					}
 				} else if (instanceof_function(object->ce, zend_ce_closure)) {
 					zend_closure_t *closure = (zend_closure_t*) object;
 
@@ -742,6 +725,24 @@ PHP_METHOD(Componere_Definition, register)
 	}
 
 	zend_hash_update_ptr(CG(class_table), name, o->ce);
+
+	/* Initialize static members table if needed */
+	if (o->ce->default_static_members_count > 0) {
+#if PHP_VERSION_ID >= 70400
+		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
+			ZEND_MAP_PTR_INIT(o->ce->static_members_table, NULL);
+		}
+		/* Allocate static members table for runtime use */
+		if (!ZEND_MAP_PTR(o->ce->static_members_table)) {
+			zval *table = emalloc(sizeof(zval) * o->ce->default_static_members_count);
+			int i;
+			for (i = 0; i < o->ce->default_static_members_count; i++) {
+				ZVAL_COPY(&table[i], &o->ce->default_static_members_table[i]);
+			}
+			ZEND_MAP_PTR_SET(o->ce->static_members_table, table);
+		}
+#endif
+	}
 
 	o->ce->refcount = 1;
 	o->registered = 1;
@@ -1138,6 +1139,13 @@ PHP_METHOD(Componere_Definition, getClosure)
 		(function->type == ZEND_USER_FUNCTION && function->op_array.fn_flags & ZEND_ACC_CLOSURE)) {
 		zend_string_release(key);
 		php_componere_throw("cannot create closure for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	/* Additional safety checks */
+	if (!o->ce || !function) {
+		zend_string_release(key);
+		php_componere_throw("invalid function for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
 		return;
 	}
 	

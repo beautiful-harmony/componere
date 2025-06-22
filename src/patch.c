@@ -220,12 +220,28 @@ PHP_METHOD(Componere_Patch, getClosure)
 	function = zend_hash_find_ptr(&o->ce->function_table, key);
 
 	if (!function) {
+		zend_string_release(key);
 		php_componere_throw(
 			"could not find %s::%s", 
 			ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
-	} else {
-		zend_create_closure(return_value, function, o->ce, o->ce, &o->instance);
+		return;
 	}
+	
+	/* Additional safety checks */
+	if (function->type == ZEND_INTERNAL_FUNCTION || 
+		(function->type == ZEND_USER_FUNCTION && function->op_array.fn_flags & ZEND_ACC_CLOSURE)) {
+		zend_string_release(key);
+		php_componere_throw("cannot create closure for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	if (!o->ce || !function) {
+		zend_string_release(key);
+		php_componere_throw("invalid function scope for %s::%s", ZSTR_VAL(o->ce->name), ZSTR_VAL(name));
+		return;
+	}
+	
+	zend_create_closure(return_value, function, o->ce, o->ce, &o->instance);
 	zend_string_release(key);
 }
 
